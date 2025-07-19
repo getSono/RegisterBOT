@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Discord Bot UI</title>
+  <script defer src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-8 font-sans">
+  <div class="max-w-xl mx-auto space-y-6">
+    <h1 class="text-2xl font-bold text-center">📬 Discord Nachricht senden</h1>
+
+    <!-- Server Auswahl -->
+    <div class="relative">
+      <button id="serverDropdownBtn" class="w-full flex items-center justify-between bg-white border border-gray-300 px-4 py-2 rounded shadow">
+        <span id="serverDropdownLabel">Server auswählen...</span>
+        <svg class="w-4 h-4 ml-2" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.939l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.243a.75.75 0 01-1.06 0L5.25 8.29a.75.75 0 01-.02-1.06z" clip-rule="evenodd" /></svg>
+      </button>
+      <ul id="serverDropdown" class="absolute z-10 mt-1 w-full bg-white border border-gray-300 rounded shadow hidden max-h-60 overflow-y-auto"></ul>
+    </div>
+
+    <!-- User Auswahl -->
+    <div class="relative">
+      <button id="userDropdownBtn" class="w-full flex items-center justify-between bg-white border border-gray-300 px-4 py-2 rounded shadow">
+        <span id="userDropdownLabel">Benutzer auswählen...</span>
+        <svg class="w-4 h-4 ml-2" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.939l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.243a.75.75 0 01-1.06 0L5.25 8.29a.75.75 0 01-.02-1.06z" clip-rule="evenodd" /></svg>
+      </button>
+      <ul id="userDropdown" class="absolute z-10 mt-1 w-full bg-white border border-gray-300 rounded shadow hidden max-h-60 overflow-y-auto"></ul>
+    </div>
+
+    <!-- Nachricht -->
+    <textarea id="message" rows="4" placeholder="Nachricht eingeben..." class="w-full border border-gray-300 rounded p-3 shadow resize-none"></textarea>
+    <button onclick="sendDM()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded w-full shadow">Nachricht senden</button>
+
+    <hr class="my-6">
+    <h2 class="text-xl font-semibold mb-2">📥 Eingehende DMs</h2>
+    <div id="inbox" class="space-y-3"></div>
+  </div>
+
+  <script>
+    let selectedServer = null;
+    let selectedUser = null;
+    let servers = [];
+    let members = [];
+
+    async function loadServers() {
+      const res = await fetch('http://localhost:3001/guilds');
+      servers = await res.json();
+      const list = document.getElementById('serverDropdown');
+      list.innerHTML = '';
+      servers.forEach(server => {
+        const li = document.createElement('li');
+        li.className = "flex items-center px-4 py-2 hover:bg-gray-100 cursor-pointer";
+        li.onclick = () => {
+          selectedServer = server;
+          document.getElementById('serverDropdownLabel').textContent = server.name;
+          toggleDropdown('serverDropdown', false);
+          loadMembers(server.id);
+        };
+        li.innerHTML = `<img src="${server.iconUrl || 'https://via.placeholder.com/32'}" class="w-6 h-6 rounded-full mr-3" /> ${server.name}`;
+        list.appendChild(li);
+      });
+    }
+
+    async function loadMembers(guildId) {
+      const res = await fetch(`http://localhost:3001/members/${guildId}`);
+      members = await res.json();
+      const list = document.getElementById('userDropdown');
+      list.innerHTML = '';
+      members.forEach(user => {
+        const li = document.createElement('li');
+        li.className = "flex items-center px-4 py-2 hover:bg-gray-100 cursor-pointer";
+        li.onclick = () => {
+          selectedUser = user;
+          document.getElementById('userDropdownLabel').textContent = user.username;
+          toggleDropdown('userDropdown', false);
+        };
+        li.innerHTML = `<img src="${user.avatarUrl}" class="w-6 h-6 rounded-full mr-3" /> ${user.username}`;
+        list.appendChild(li);
+      });
+    }
+
+    function toggleDropdown(id, forceState) {
+      const el = document.getElementById(id);
+      const show = forceState !== undefined ? forceState : el.classList.contains('hidden');
+      el.classList.toggle('hidden', !show);
+    }
+
+    async function sendDM() {
+      const content = document.getElementById('message').value;
+      if (!selectedUser || !content) {
+        alert("Bitte Benutzer und Nachricht eingeben.");
+        return;
+      }
+
+      const res = await fetch('http://localhost:3001/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: selectedUser.id, message: content })
+      });
+
+      const result = await res.json();
+      alert(result.success ? "Nachricht gesendet!" : `Fehler: ${result.error}`);
+    }
+
+    async function loadIncomingMessages() {
+      const res = await fetch('http://localhost:3001/messages');
+      const data = await res.json();
+
+      const inbox = document.getElementById('inbox');
+      inbox.innerHTML = '';
+      data.slice().reverse().forEach(msg => {
+        const div = document.createElement('div');
+        div.className = "bg-white border p-3 rounded shadow";
+
+        div.innerHTML = `
+          <div class="flex items-center mb-2">
+            <img src="${msg.avatar}" class="w-6 h-6 rounded-full mr-2" />
+            <strong>${msg.username}</strong>
+            <span class="text-sm text-gray-500 ml-2">${new Date(msg.timestamp).toLocaleString()}</span>
+          </div>
+          <p class="mb-2">${msg.content}</p>
+          <button onclick="replyTo('${msg.userId}', '${msg.username.replace("'", "\\'")}')" class="text-sm text-indigo-600 hover:underline">Antworten</button>
+        `;
+        inbox.appendChild(div);
+      });
+    }
+
+    function replyTo(userId, username) {
+      selectedUser = { id: userId, username: username };
+      document.getElementById('userDropdownLabel').textContent = `${username} (aus Inbox)`;
+      document.getElementById('message').focus();
+    }
+
+    setInterval(loadIncomingMessages, 5000);
+    document.getElementById('serverDropdownBtn').onclick = () => toggleDropdown('serverDropdown');
+    document.getElementById('userDropdownBtn').onclick = () => toggleDropdown('userDropdown');
+
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('#serverDropdownBtn') && !e.target.closest('#serverDropdown')) {
+        toggleDropdown('serverDropdown', false);
+      }
+      if (!e.target.closest('#userDropdownBtn') && !e.target.closest('#userDropdown')) {
+        toggleDropdown('userDropdown', false);
+      }
+    });
+
+    loadServers();
+    loadIncomingMessages();
+  </script>
+</body>
+</html>
